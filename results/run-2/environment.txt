@@ -1,0 +1,9 @@
+python: 3.14.7 (main, Sep  5 2026, 05:55:41) [GCC 16.2.0]
+cryptography: 50.0.2
+openssl: OpenSSL 3.6.2 7 Apr 2026
+cpu_model: Not reported by platform.processor()
+architecture: x86_64
+logical_cores: 2
+platform: Linux-6.19.14+kali-amd64-x86_64-with-glibc2.43
+system: Linux
+release: 6.19.14+kali-amd64
