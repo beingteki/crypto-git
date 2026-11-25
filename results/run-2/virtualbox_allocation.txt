@@ -1,0 +1,16 @@
+Kali VM allocation verification, 25 November 2026
+VM name: kali-linux-2026.2-virtualbox-amd64
+Source: Oracle VirtualBox Manager System pane and VBoxManage command output supplied by the user.
+
+Configured base memory: 4096 MB (VirtualBox Manager display)
+Configured virtual CPUs: 2
+
+Windows PowerShell command used:
+& "$env:ProgramFiles\Oracle\VirtualBox\VBoxManage.exe" showvminfo "kali-linux-2026.2-virtualbox-amd64" --machinereadable |
+  Select-String '^(memory|cpus)='
+
+Output:
+memory=4096
+cpus=2
+
+The recorded in-guest capture separately reported 3.83 GiB visible RAM.

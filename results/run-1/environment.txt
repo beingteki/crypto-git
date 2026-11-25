@@ -1,6 +1,7 @@
 python: 3.14.7 (main, Nov 15 2026, 17:27:23) [Clang 21.0.0 (clang-2100.4.1.1)]
 cryptography: 50.0.2
-openssl: OpenSSL 3.6.1 27 Jan 2026
+cryptography_backend_openssl: OpenSSL 4.0.3 29 Sep 2026
+python_ssl_module_openssl: OpenSSL 3.6.1 27 Jan 2026
 cpu_model: arm
 architecture: arm64
 logical_cores: 11

@@ -14,9 +14,9 @@ import argparse
 import csv
 import os
 import platform
-import statistics
 import sys
 import time
+from functools import partial
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -47,117 +47,104 @@ MESSAGE = os.urandom(1024)
 
 
 def timed_rows(writer, part: str, algorithm: str, operation: str,
-               message_bytes: int, fn: Callable[[], object],
+               message_bytes: int, fn: Optional[Callable[[], object]] = None,
                runs: int = NORMAL_RUNS,
-               prepare: Optional[Callable[[int], None]] = None) -> None:
-    """Time each call independently. Preparation is always outside the clock."""
+               prepare: Optional[Callable[[], Callable[[], object]]] = None) -> None:
+    """Time each call independently after any per-run preparation."""
+    measurements = []
     for run in range(runs):
-        if prepare is not None:
-            prepare(run)
+        operation_call = fn if prepare is None else prepare()
+        assert operation_call is not None
         start = time.perf_counter_ns()
-        fn()
+        result = operation_call()
         elapsed = time.perf_counter_ns() - start
-        writer.writerow([part, algorithm, operation, message_bytes, run, elapsed])
-        print(f"{part:11} {algorithm:20} {operation:12} run={run:03d} {elapsed:>12} ns",
-              flush=True)
+        del result
+        measurements.append([part, algorithm, operation, message_bytes, run, elapsed])
+    writer.writerows(measurements)
+    print(f"{part:9} {algorithm:20} {operation:12} size={message_bytes}: {runs} runs", flush=True)
 
 
-def rsa_oaep_encrypt(public_key, data):
-    return public_key.encrypt(
-        data,
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None,
-        ),
+def rsa_oaep_encapsulate(public_key, oaep):
+    return public_key.encrypt(os.urandom(32), oaep)
+
+
+def ecdh_encapsulate(curve, public_key, exchange):
+    ephemeral = ec.generate_private_key(curve)
+    secret = ephemeral.exchange(exchange, public_key)
+    ciphertext = ephemeral.public_key().public_bytes(
+        serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
     )
+    return secret, ciphertext
+
+
+def ecdh_decapsulate(private_key, curve, exchange, ciphertext):
+    ephemeral_public_key = ec.EllipticCurvePublicKey.from_encoded_point(curve, ciphertext)
+    return private_key.exchange(exchange, ephemeral_public_key)
+
+
+def x25519_encapsulate(public_key):
+    ephemeral = x25519.X25519PrivateKey.generate()
+    secret = ephemeral.exchange(public_key)
+    ciphertext = ephemeral.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    return secret, ciphertext
+
+
+def x25519_decapsulate(private_key, ciphertext):
+    return private_key.exchange(x25519.X25519PublicKey.from_public_bytes(ciphertext))
 
 
 def run_kem(writer):
-    # RSA-OAEP-3072 and RSA-OAEP-7680
+    sha256 = hashes.SHA256()
+    oaep = padding.OAEP(mgf=padding.MGF1(sha256), algorithm=sha256, label=None)
     for bits, name in [(3072, "RSA-OAEP-3072"), (7680, "RSA-OAEP-7680")]:
-        timed_rows(writer, "kem", name, "keygen", 0,
-                   lambda b=bits: rsa.generate_private_key(public_exponent=65537, key_size=b),
-                   runs=RSA_KEYGEN_RUNS)
-        receiver = rsa.generate_private_key(public_exponent=65537, key_size=bits)
-        ciphertext = rsa_oaep_encrypt(receiver.public_key(), os.urandom(32))
-        timed_rows(writer, "kem", name, "encapsulate", 0,
-                   lambda pk=receiver.public_key(): rsa_oaep_encrypt(pk, os.urandom(32)))
-        timed_rows(writer, "kem", name, "decapsulate", 0,
-                   lambda sk=receiver, ct=ciphertext: sk.decrypt(
-                       ct, padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),
-                                        algorithm=hashes.SHA256(), label=None)))
+        generate = partial(rsa.generate_private_key, public_exponent=65537, key_size=bits)
+        timed_rows(writer, "kem", name, "keygen", 0, generate, runs=RSA_KEYGEN_RUNS)
+        receiver = generate()
+        encapsulate = partial(rsa_oaep_encapsulate, receiver.public_key(), oaep)
+        ciphertext = encapsulate()
+        timed_rows(writer, "kem", name, "encapsulate", 0, encapsulate)
+        timed_rows(writer, "kem", name, "decapsulate", 0, partial(receiver.decrypt, ciphertext, oaep))
 
-    # ECDH: ephemeral key generation + exchange + public point serialization are timed.
     curves = [
         ("ECDH-P-256", ec.SECP256R1()),
         ("ECDH-P-384", ec.SECP384R1()),
         ("ECDH-P-521", ec.SECP521R1()),
     ]
+    exchange = ec.ECDH()
     for name, curve in curves:
-        timed_rows(writer, "kem", name, "keygen", 0,
-                   lambda c=curve: ec.generate_private_key(c))
-        receiver = ec.generate_private_key(curve)
-        ephemeral = ec.generate_private_key(curve)
-        ciphertext = ephemeral.public_key().public_bytes(
-            serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
-        timed_rows(writer, "kem", name, "encapsulate", 0,
-                   lambda c=curve, pk=receiver.public_key(): (
-                       lambda eph: (eph.exchange(ec.ECDH(), pk),
-                                    eph.public_key().public_bytes(
-                                        serialization.Encoding.X962,
-                                        serialization.PublicFormat.UncompressedPoint))
-                   )(ec.generate_private_key(c)))
+        generate = partial(ec.generate_private_key, curve)
+        timed_rows(writer, "kem", name, "keygen", 0, generate)
+        receiver = generate()
+        encapsulate = partial(ecdh_encapsulate, curve, receiver.public_key(), exchange)
+        _, ciphertext = encapsulate()
+        timed_rows(writer, "kem", name, "encapsulate", 0, encapsulate)
         timed_rows(writer, "kem", name, "decapsulate", 0,
-                   lambda sk=receiver, ct=ciphertext, c=curve:
-                   sk.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(c, ct)))
+                   partial(ecdh_decapsulate, receiver, curve, exchange, ciphertext))
 
-    # X25519
     timed_rows(writer, "kem", "X25519", "keygen", 0, x25519.X25519PrivateKey.generate)
     receiver = x25519.X25519PrivateKey.generate()
-    ephemeral = x25519.X25519PrivateKey.generate()
-    ciphertext = ephemeral.public_key().public_bytes(
-        serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    def x_encapsulate():
-        eph = x25519.X25519PrivateKey.generate()
-        eph.exchange(receiver.public_key())
-        return eph.public_key().public_bytes(serialization.Encoding.Raw,
-                                             serialization.PublicFormat.Raw)
-    timed_rows(writer, "kem", "X25519", "encapsulate", 0, x_encapsulate)
+    encapsulate = partial(x25519_encapsulate, receiver.public_key())
+    _, ciphertext = encapsulate()
+    timed_rows(writer, "kem", "X25519", "encapsulate", 0, encapsulate)
     timed_rows(writer, "kem", "X25519", "decapsulate", 0,
-               lambda: receiver.exchange(x25519.X25519PublicKey.from_public_bytes(ciphertext)))
+               partial(x25519_decapsulate, receiver, ciphertext))
 
     # Post-quantum KEMs
     for name, cls in [("ML-KEM-768", MLKEM768PrivateKey),
                       ("ML-KEM-1024", MLKEM1024PrivateKey)]:
         timed_rows(writer, "kem", name, "keygen", 0, cls.generate)
         receiver = cls.generate()
-        _, ciphertext = receiver.public_key().encapsulate()
-        timed_rows(writer, "kem", name, "encapsulate", 0,
-                   receiver.public_key().encapsulate)
-        timed_rows(writer, "kem", name, "decapsulate", 0,
-                   lambda sk=receiver, ct=ciphertext: sk.decapsulate(ct))
-
-
-def rsa_pss_sign(private_key, data):
-    return private_key.sign(
-        data,
-        padding.PSS(mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=hashes.SHA256().digest_size),
-        hashes.SHA256(),
-    )
-
-
-def rsa_pss_verify(public_key, signature, data):
-    return public_key.verify(
-        signature, data,
-        padding.PSS(mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=hashes.SHA256().digest_size),
-        hashes.SHA256(),
-    )
+        encapsulate = receiver.public_key().encapsulate
+        _, ciphertext = encapsulate()
+        timed_rows(writer, "kem", name, "encapsulate", 0, encapsulate)
+        timed_rows(writer, "kem", name, "decapsulate", 0, partial(receiver.decapsulate, ciphertext))
 
 
 def run_signatures(writer):
+    sha256 = hashes.SHA256()
+    pss = padding.PSS(mgf=padding.MGF1(sha256), salt_length=sha256.digest_size)
     specs = [
         ("RSA-PSS-3072", lambda: rsa.generate_private_key(public_exponent=65537, key_size=3072),
          hashes.SHA256()),
@@ -177,25 +164,17 @@ def run_signatures(writer):
                    runs=RSA_KEYGEN_RUNS if is_rsa else NORMAL_RUNS)
         private_key = keygen()  # Setup key pair for sign/verify outside timing.
         public_key = private_key.public_key()
-        if name.startswith("RSA-"):
-            signature = rsa_pss_sign(private_key, MESSAGE)
-            timed_rows(writer, "signature", name, "sign", 0,
-                       lambda sk=private_key: rsa_pss_sign(sk, MESSAGE))
-            timed_rows(writer, "signature", name, "verify", 0,
-                       lambda pk=public_key, sig=signature: rsa_pss_verify(pk, sig, MESSAGE))
-        elif name.startswith("ECDSA-"):
-            signature = private_key.sign(MESSAGE, ec.ECDSA(digest))
-            timed_rows(writer, "signature", name, "sign", 0,
-                       lambda sk=private_key, h=digest: sk.sign(MESSAGE, ec.ECDSA(h)))
-            timed_rows(writer, "signature", name, "verify", 0,
-                       lambda pk=public_key, sig=signature, h=digest:
-                       pk.verify(sig, MESSAGE, ec.ECDSA(h)))
+        if is_rsa:
+            options = (pss, sha256)
+        elif digest is not None:
+            options = (ec.ECDSA(digest),)
         else:
-            signature = private_key.sign(MESSAGE)
-            timed_rows(writer, "signature", name, "sign", 0,
-                       lambda sk=private_key: sk.sign(MESSAGE))
-            timed_rows(writer, "signature", name, "verify", 0,
-                       lambda pk=public_key, sig=signature: pk.verify(sig, MESSAGE))
+            options = ()
+        sign = partial(private_key.sign, MESSAGE, *options)
+        signature = sign()
+        verify = partial(public_key.verify, signature, MESSAGE, *options)
+        timed_rows(writer, "signature", name, "sign", 0, sign)
+        timed_rows(writer, "signature", name, "verify", 0, verify)
 
 
 def run_aead(writer):
@@ -210,19 +189,16 @@ def run_aead(writer):
             key = os.urandom(key_len)
             message = os.urandom(size)
             cipher = cls(key)
-            nonce_box = {"value": os.urandom(12)}
-            # Generate each fresh nonce before the clock, as required by the brief.
-            def prepare(_run):
-                nonce_box["value"] = os.urandom(12)
-            timed_rows(writer, "aead", name, "encrypt", size,
-                       lambda c=cipher, m=message, nb=nonce_box:
-                       c.encrypt(nb["value"], m, None),
-                       prepare=prepare)
+            encrypt = cipher.encrypt
+
+            def prepare_encrypt():
+                return partial(encrypt, os.urandom(12), message, None)
+
+            timed_rows(writer, "aead", name, "encrypt", size, prepare=prepare_encrypt)
             fixed_nonce = os.urandom(12)
             fixed_ciphertext = cipher.encrypt(fixed_nonce, message, None)
             timed_rows(writer, "aead", name, "decrypt", size,
-                       lambda c=cipher, n=fixed_nonce, ct=fixed_ciphertext:
-                       c.decrypt(n, ct, None))
+                       partial(cipher.decrypt, fixed_nonce, fixed_ciphertext, None))
 
 
 def environment_metadata():
@@ -234,7 +210,8 @@ def environment_metadata():
     return {
         "python": sys.version.replace("\n", " "),
         "cryptography": cryptography.__version__,
-        "openssl": ssl.OPENSSL_VERSION,
+        "cryptography_backend_openssl": backend.openssl_version_text(),
+        "python_ssl_module_openssl": ssl.OPENSSL_VERSION,
         "cpu_model": cpu,
         "architecture": platform.machine(),
         "logical_cores": os.cpu_count(),
@@ -249,13 +226,16 @@ def main():
     parser.add_argument("output_dir", help="Directory in which raw.csv and environment.txt are written")
     args = parser.parse_args()
     out = Path(args.output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        parser.error(f"Output directory already exists. Choose a new path: {out}")
     metadata = environment_metadata()
-    with (out / "environment.txt").open("w", encoding="utf-8") as f:
+    with (out / "environment.txt").open("x", encoding="utf-8") as f:
         for key, value in metadata.items():
             f.write(f"{key}: {value}\n")
     raw_path = out / "raw.csv"
-    with raw_path.open("w", newline="", encoding="utf-8") as f:
+    with raw_path.open("x", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(HEADER)
         run_kem(writer)

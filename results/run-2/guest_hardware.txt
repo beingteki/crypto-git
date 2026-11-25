@@ -1,0 +1,9 @@
+Environment 2 guest hardware capture (Kali Linux VM)
+Guest OS: Kali Linux, kernel 6.19.14+kali-amd64
+Architecture: x86_64
+Guest-visible CPU model from lscpu and /proc/cpuinfo: 11th Gen Intel(R) Core(TM) i3-1115G4 @ 3.00GHz
+vCPUs/logical CPUs visible to guest: 2 (CPU 0,1)
+Guest-visible cores: 2; threads per core: 1
+Guest RAM from cryptography collector: 3.83 GiB; `free -h` reported 3.8 GiB total
+Virtualization evidence: `systemd-detect-virt --vm` returned `oracle`; DMI vendor `innotek GmbH`, product `VirtualBox`, product-version `1.2`; `lscpu` printed hypervisor vendor `KVM` in its guest-visible CPUID details.
+Interpretation for reporting: the physical Windows host confirms Oracle VirtualBox 7.2.20r175154. Record the KVM CPUID string as a guest-visible diagnostic field, not as the host hypervisor product.
