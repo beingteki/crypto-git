@@ -1,0 +1,15 @@
+environment_label: MacBook Pro M3 Pro
+capture_context: Same Python 3.14.7 / pyca-cryptography 50.0.2 environment used for Environment 1; captured after the benchmark run.
+python_version: 3.14.7
+cryptography_version: 50.0.2
+cryptography_backend_openssl: OpenSSL 4.0.3 29 Sep 2026
+python_ssl_module_openssl_separate_value: OpenSSL 3.6.1 27 Jan 2026
+operating_system: macOS 27.2.1
+system: Darwin
+architecture: arm64
+logical_cpu_count: 11
+cpu_identifier_seen_by_this_system: Apple M3 Pro
+physical_or_guest_memory_seen_by_this_system: 18.00 GiB
+hypervisor_hint_from_guest: Not applicable / not detected
+physical_cpu_cores_sysctl_hw_physicalcpu: 11
+logical_cpus_sysctl_hw_logicalcpu: 11

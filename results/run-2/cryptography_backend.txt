@@ -1,0 +1,13 @@
+environment_label: Kali Linux VM
+capture_context: Same Python 3.14.7 / pyca-cryptography 50.0.2 environment used for Environment 2; captured after the benchmark run.
+python_version: 3.14.7
+cryptography_version: 50.0.2
+cryptography_backend_openssl: OpenSSL 4.0.3 29 Sep 2026
+python_ssl_module_openssl_separate_value: OpenSSL 3.6.2 7 Apr 2026
+operating_system: Linux-6.19.14+kali-amd64-x86_64-with-glibc2.43
+system: Linux
+architecture: x86_64
+logical_cpu_count: 2
+cpu_identifier_seen_by_this_system: 0 (collector field; use independent lscpu output for guest-visible CPU model)
+physical_or_guest_memory_seen_by_this_system: 3.83 GiB
+hypervisor_hint_from_guest: oracle

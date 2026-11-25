@@ -1,0 +1,12 @@
+Environment 1 host hardware capture (MacBook Pro M3 Pro)
+CPU identifier: Apple M3 Pro
+Physical CPU cores: 11 (sysctl -n hw.physicalcpu)
+Logical CPUs: 11 (sysctl -n hw.logicalcpu)
+Architecture: arm64
+Operating system: macOS 27.2.1
+Memory visible to backend collector: 18.00 GiB
+Captured command output:
+Physical CPU cores:
+11
+Logical CPUs:
+11

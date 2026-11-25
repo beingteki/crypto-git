@@ -1,0 +1,12 @@
+Environment 2 physical host capture (Windows laptop)
+Manufacturer: ASUSTeK COMPUTER INC.
+Model: VivoBook_ASUSLaptop X415EA_X415EA
+Operating system: Microsoft Windows 11 Home Single Language
+Windows version/build: 10.0.26300
+Host OS architecture: 64-bit
+Physical CPU: 11th Gen Intel(R) Core(TM) i3-1115G4 @ 3.00GHz
+Physical CPU cores: 2
+Physical logical processors: 4
+Physical RAM: 19.7 GiB as printed by the supplied PowerShell expression (TotalPhysicalMemory / 1GB, rounded to 2 decimals)
+Oracle VirtualBox host application version: 7.2.20r175154
+Kali VM listed on host: kali-linux-2026.2-virtualbox-amd64
